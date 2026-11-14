@@ -134,8 +134,7 @@ int is_mac(const char *mac, unsigned char hex_addr[MAC_LEN]) {
     if(mac_len != 17)
         return 0;
     for(size_t i = 0; i < mac_len; i++) {
-        // TODO: optimize this check
-        if(i == 2 || i == 5 || i == 8 || i == 11 || i == 14) {
+        if(i % 3 == 2) {
             if(mac[i] != ':')
                 return 0;
             continue;
