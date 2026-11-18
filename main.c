@@ -7,7 +7,7 @@
 #include <string.h>
 #include <unistd.h>
 
-#define OPTS "hr"
+#define OPTS "hrp"
 /*
  * h for help
  * r for setting a random valid address
@@ -20,6 +20,9 @@ static int is_mac(const char *mac, unsigned char hex_addr[MAC_LEN]);
 
 int main(int argc, char *argv[]) {
     int status = 0;
+    struct ifreq ifr;
+    memset(&ifr, 0, sizeof(ifr));
+    unsigned char addr[MAC_LEN];
     // parse options
     int opt;
     while((opt = getopt(argc, argv, OPTS)) != -1) {
@@ -28,6 +31,9 @@ int main(int argc, char *argv[]) {
                 usage(HELP);
                 return 0;
             case 'r':
+                // not implemented yet
+                break;
+            case 'p':
                 // not implemented yet
                 break;
             default:
@@ -39,7 +45,7 @@ int main(int argc, char *argv[]) {
     argv += optind;
     // check root
     if(geteuid() != 0) {
-        fprintf(stderr, "Run as root\n");
+        fprintf(stderr, "This program must be run as root\n");
         return 1;
     }
     // standard usage
@@ -50,7 +56,6 @@ int main(int argc, char *argv[]) {
     // check MAC address
     const char *ifname = argv[0];
     const char *new_mac = argv[1];
-    unsigned char addr[MAC_LEN];
     if(!is_mac(new_mac, addr)) {
         fprintf(stderr, "Invalid MAC address!\n");
         return 1;
@@ -62,28 +67,27 @@ int main(int argc, char *argv[]) {
         return 1;
     }
     // copy the interface name
-    struct ifreq ifr;
-    memset(&ifr, 0, sizeof(ifr));
     strncpy(ifr.ifr_name, ifname, IFNAMSIZ - 1);
     // check the interface status
     if(ioctl(fd, SIOCGIFFLAGS, &ifr) == -1) {
         perror("ioctl SIOCGIFFLAGS");
-        return 1;
-    }
-    if(!(ifr.ifr_flags & IFF_UP)) goto down;
-    // bring the interface down
-    ifr.ifr_flags &= ~IFF_UP;
-    if(ioctl(fd, SIOCSIFFLAGS, &ifr) == -1) {
-        perror("ioctl SIOCSIFFLAGS");
         close(fd);
         return 1;
     }
-down:
+    // bring the interface down
+    if(ifr.ifr_flags & IFF_UP) {
+        ifr.ifr_flags &= ~IFF_UP;
+        if(ioctl(fd, SIOCSIFFLAGS, &ifr) == -1) {
+            perror("ioctl SIOCSIFFLAGS");
+            close(fd);
+            return 1;
+        }
+    }
     // read the current MAC address (stored in ifr.ifr_hwaddr.sa_data)
     if(ioctl(fd, SIOCGIFHWADDR, &ifr) == -1) {
         perror("ioctl SIOCGIFHWADDR");
-        close(fd);
-        return 1;
+        status = 1;
+        goto up;
     }
     printf("Current MAC address: ");
     for(size_t i = 0; i < MAC_LEN; i++)
@@ -99,7 +103,7 @@ down:
         goto up;
     }
     printf("New MAC address: ");
-    for(int i = 0; i < MAC_LEN; i++)
+    for(size_t i = 0; i < MAC_LEN; i++)
         printf("%02x%s", addr[i], i < MAC_LEN - 1 ? ":" : "");
     puts("");
     // bring the interface up
@@ -119,7 +123,7 @@ up:
     return status;
 }
 
-void usage(enum mode m) {
+static void usage(enum mode m) {
     if(m == HELP)
         printf("Change your interface MAC address temporarily\n"
             "Options:\n"
@@ -129,7 +133,7 @@ void usage(enum mode m) {
         fprintf(stderr, "Usage: chgmac [options] <interface> <new_mac>\n");
 }
 
-int is_mac(const char *mac, unsigned char hex_addr[MAC_LEN]) {
+static int is_mac(const char *mac, unsigned char hex_addr[MAC_LEN]) {
     size_t mac_len = strlen(mac);
     if(mac_len != 17)
         return 0;
